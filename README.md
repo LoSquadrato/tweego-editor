@@ -1,5 +1,9 @@
 # Tweego Editor
 
+![Go Version](https://img.shields.io/badge/Go-1.21+-00ADD8?style=flat&logo=go)
+![License](https://img.shields.io/badge/license-MIT-green)
+![Status](https://img.shields.io/badge/status-alpha-orange)
+
 A modern and powerful editor for Twine interactive stories, based on [Tweego](https://www.motoslave.net/tweego/).
 
 ## 🎯 Project Goals
