@@ -1,1 +1,5 @@
+output/
+*.html
+*.exe
+
 test_story.twee
