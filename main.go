@@ -1,27 +1,53 @@
 package main
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
+	"strings"
+	"tweego-editor/api"
 	"tweego-editor/compiler"
 	"tweego-editor/formats/harlowe"
 	"tweego-editor/parser"
+	"tweego-editor/watcher"
 )
 
 func main() {
 	fmt.Println("Tweego Editor Backend v0.1.0")
 	fmt.Println("================================\n")
 	
-	// Test del parser
-	fmt.Println("📖 Testing Parser...")
-	testParser()
+	// Mostra menu
+	fmt.Println("Scegli una modalità:")
+	fmt.Println("1. Test Parser")
+	fmt.Println("2. Test Compiler")
+	fmt.Println("3. Watch Mode (auto-ricompila)")
+	fmt.Println("4. API Server (REST + WebSocket)")
+	fmt.Print("\nScelta (1/2/3/4): ")
 	
-	fmt.Println("\n================================\n")
+	reader := bufio.NewReader(os.Stdin)
+	choice, _ := reader.ReadString('\n')
+	choice = strings.TrimSpace(choice)
 	
-	// Test del compiler
-	fmt.Println("⚙️  Testing Tweego Compiler...")
-	testCompiler()
+	fmt.Println()
+	
+	switch choice {
+	case "1":
+		fmt.Println("📖 Testing Parser...")
+		testParser()
+	case "2":
+		fmt.Println("⚙️  Testing Tweego Compiler...")
+		testCompiler()
+	case "3":
+		fmt.Println("👀 Starting Watch Mode...")
+		testWatcher()
+	case "4":
+		fmt.Println("🌐 Starting API Server...")
+		startAPIServer()
+	default:
+		fmt.Println("❌ Scelta non valida")
+	}
 }
 
 func testParser() {
@@ -140,5 +166,81 @@ func testCompiler() {
 		if result.ErrorMessage != "" {
 			fmt.Printf("Errore: %s\n", result.ErrorMessage)
 		}
+	}
+}
+
+func testWatcher() {
+	// Crea il compiler
+	tweegoCompiler, err := compiler.NewTweegoCompiler("", "./output")
+	if err != nil {
+		log.Fatalf("❌ Errore inizializzazione compiler: %v", err)
+	}
+	
+	// Configurazione watcher
+	config := watcher.WatcherConfig{
+		Paths: []string{"."}, // Monitora directory corrente
+		Compiler: tweegoCompiler,
+		CompileOpts: &compiler.CompileOptions{
+			Format: "harlowe-3",
+			Output: "test_output.html",
+		},
+		AutoCompile: true,
+	}
+	
+	// Crea e avvia il watcher
+	fw, err := watcher.NewFileWatcher(config)
+	if err != nil {
+		log.Fatalf("❌ Errore creazione watcher: %v", err)
+	}
+	
+	if err := fw.Start(); err != nil {
+		log.Fatalf("❌ Errore avvio watcher: %v", err)
+	}
+	
+	fmt.Println("\n✨ Watch mode attivo!")
+	fmt.Println("💡 Modifica test_story.twee per vedere la ricompilazione automatica")
+	fmt.Println("🛑 Premi CTRL+C per uscire\n")
+	
+	// Ascolta eventi
+	for event := range fw.Events() {
+		fmt.Printf("📢 Evento: %s - %s\n", event.Type, event.Path)
+	}
+}
+
+func startAPIServer() {
+	// Crea il compiler
+	tweegoCompiler, err := compiler.NewTweegoCompiler("", "./output")
+	if err != nil {
+		log.Fatalf("❌ Errore inizializzazione compiler: %v", err)
+	}
+	
+	// Configurazione server
+	config := api.ServerConfig{
+		Port:       8080,
+		Compiler:   tweegoCompiler,
+		EnableCORS: true,
+		Debug:      true,
+	}
+	
+	// Crea e avvia server
+	server := api.NewServer(config)
+	
+	fmt.Println("\n✨ API Server ready!")
+	fmt.Println("📚 Documentazione endpoint:")
+	fmt.Println("   GET  /api/health")
+	fmt.Println("   POST /api/story/parse")
+	fmt.Println("   POST /api/story/compile")
+	fmt.Println("   GET  /api/story/:file/passages")
+	fmt.Println("   GET  /api/story/:file/passage/:title")
+	fmt.Println("   POST /api/watch/start")
+	fmt.Println("   POST /api/watch/stop")
+	fmt.Println("   GET  /api/watch/status")
+	fmt.Println("   GET  /api/formats")
+	fmt.Println("   GET  /api/version")
+	fmt.Println("   WS   /ws (WebSocket)")
+	fmt.Println()
+	
+	if err := server.Start(); err != nil {
+		log.Fatalf("❌ Errore avvio server: %v", err)
 	}
 }

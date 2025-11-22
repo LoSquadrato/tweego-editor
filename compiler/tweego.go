@@ -174,17 +174,46 @@ func (tc *TweegoCompiler) GetVersion() (string, error) {
 // ListFormats elenca i formati disponibili
 func (tc *TweegoCompiler) ListFormats() ([]string, error) {
 	cmd := exec.Command(tc.tweegoPath, "--list-formats")
-	output, err := cmd.Output()
-	if err != nil {
-		return nil, fmt.Errorf("impossibile elencare formati: %w", err)
+	
+	// Cattura sia stdout che stderr
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	
+	// Esegui il comando (ignoriamo l'errore perché tweego usa stderr)
+	_ = cmd.Run()
+	
+	// Tweego scrive i formati su stderr
+	output := stderr.String()
+	if output == "" {
+		output = stdout.String()
+	}
+	
+	// Se non c'è nessun output, allora c'è un vero errore
+	if output == "" {
+		return nil, fmt.Errorf("nessun output da tweego --list-formats")
 	}
 
 	formats := []string{}
-	lines := strings.Split(string(output), "\n")
+	lines := strings.Split(output, "\n")
+	
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
-		if line != "" && !strings.HasPrefix(line, "Story formats:") {
-			formats = append(formats, line)
+		
+		// Salta linee vuote, header e separatori
+		if line == "" || 
+		   strings.HasPrefix(line, "Available formats:") ||
+		   strings.HasPrefix(line, "ID") ||
+		   strings.HasPrefix(line, "---") ||
+		   strings.HasPrefix(line, "Story formats:") {
+			continue
+		}
+		
+		// Estrai solo l'ID del formato (prima colonna)
+		fields := strings.Fields(line)
+		if len(fields) > 0 {
+			formatID := fields[0]
+			formats = append(formats, formatID)
 		}
 	}
 

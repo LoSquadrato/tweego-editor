@@ -1,0 +1,115 @@
+:: StoryTitle
+La Mia Avventura
+
+
+:: StoryData
+{
+  "ifid": "D674C58C-DEFA-4F70-B7A2-27742230C0FC",
+  "format": "Harlowe",
+  "format-version": "3.2.3",
+  "start": "Inizio"
+}
+
+
+:: Inizio [inizio importante]
+Ti svegli in una stanza buia. Ti ricordi di esserti addormentato nel tuo letto.
+
+(set: $nome to "Avventuriero")
+(set: $vita to 100)
+(set: $ha_chiave to false)
+
+Ciao $nome! La tua salute è al $vita%.
+
+Davanti a te vedi due porte:
+- [[Una porta di legno->Porta Legno]]
+- [[Una porta di metallo->Porta Metallo]]
+
+C'è anche un [[vecchio baule]] nell'angolo.
+
+
+:: Porta Legno [esplorazione]
+Apri la porta di legno ed entri in un corridoio illuminato da torce.
+
+(set: $vita to $vita - 10)
+
+Senti un rumore inquietante. La tua vita scende a $vita%.
+
+Cosa fai?
+- [[Prosegui nel corridoio->Corridoio]]
+- [[Torna indietro->Inizio]]
+
+
+:: Porta Metallo [esplorazione]
+La porta di metallo è chiusa a chiave.
+
+(if: $ha_chiave)[
+  Usi la chiave che hai trovato e la porta si apre!
+  [[Entra nella stanza segreta->Stanza Segreta]]
+](else: )[
+  Ti serve una chiave per aprire questa porta.
+  [[Torna indietro->Inizio]]
+]
+
+
+:: vecchio baule [oggetto]
+Apri il baule polveroso e trovi una chiave arrugginita!
+
+(set: $ha_chiave to true)
+
+Hai ottenuto: <b>Chiave Arrugginita</b>
+
+[[Chiudi il baule->Inizio]]
+
+
+:: Corridoio [esplorazione pericolo]
+Il corridoio diventa sempre più stretto e buio.
+
+(set: $vita to $vita - 20)
+
+Improvvisamente cadi in una trappola! Vita: $vita%
+
+(if: $vita <= 0)[
+  [[Game Over->Fine Cattiva]]
+](else: )[
+  Riesci a rialzarti.
+  [[Continua->Sala del Tesoro]]
+]
+
+
+:: Sala del Tesoro [finale vittoria]
+Entri in una grande sala piena di tesori scintillanti!
+
+(set: $ha_vinto to true)
+
+<h2>VITTORIA!</h2>
+
+Hai completato l'avventura, $nome!
+
+Vita rimanente: $vita%
+
+//Fine della storia//
+
+
+:: Stanza Segreta [finale segreto]
+La porta si apre rivelando una stanza nascosta piena di libri antichi.
+
+Trovi un passaggio segreto che ti porta direttamente al tesoro!
+
+(set: $vita to 100)
+(set: $ha_vinto to true)
+
+Hai trovato il finale segreto!
+
+[[Prendi il tesoro->Sala del Tesoro]]
+
+
+:: Fine Cattiva [finale morte]
+Le tue ferite sono troppo gravi...
+
+<h2>GAME OVER</h2>
+
+Hai perso $nome. La tua avventura finisce qui.
+
+Vita finale: 0%
+
+//Riprova!//
