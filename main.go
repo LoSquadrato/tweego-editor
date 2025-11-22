@@ -105,14 +105,14 @@ func testParser() {
 }
 
 func testCompiler() {
-	// Crea il compiler (cerca tweego nel PATH)
-	tweegoCompiler, err := compiler.NewTweegoCompiler("", "./output")
+	// Crea il wrapper per Tweego
+	tweegoWrapper, err := compiler.NewTweegoWrapper("", "./output")
 	if err != nil {
-		log.Fatalf("❌ Errore inizializzazione compiler: %v", err)
+		log.Fatalf("❌ Errore inizializzazione wrapper: %v", err)
 	}
 	
 	// Ottieni versione di Tweego
-	version, err := tweegoCompiler.GetVersion()
+	version, err := tweegoWrapper.GetVersion()
 	if err != nil {
 		log.Printf("⚠️  Impossibile ottenere versione: %v", err)
 	} else {
@@ -120,7 +120,7 @@ func testCompiler() {
 	}
 	
 	// Elenca formati disponibili
-	formats, err := tweegoCompiler.ListFormats()
+	formats, err := tweegoWrapper.ListFormats()
 	if err != nil {
 		log.Printf("⚠️  Impossibile elencare formati: %v", err)
 	} else {
@@ -133,7 +133,7 @@ func testCompiler() {
 	fmt.Println("\n📦 Compilazione test_story.twee...")
 	
 	// Compila la storia
-	result, err := tweegoCompiler.Compile("test_story.twee", &compiler.CompileOptions{
+	result, err := tweegoWrapper.Compile("test_story.twee", &compiler.CompileOptions{
 		Format: "harlowe-3", // Usa Harlowe 3
 		Output: "test_output.html",
 	})
@@ -170,16 +170,16 @@ func testCompiler() {
 }
 
 func testWatcher() {
-	// Crea il compiler
-	tweegoCompiler, err := compiler.NewTweegoCompiler("", "./output")
+	// Crea il wrapper per Tweego
+	tweegoWrapper, err := compiler.NewTweegoWrapper("", "./output")
 	if err != nil {
-		log.Fatalf("❌ Errore inizializzazione compiler: %v", err)
+		log.Fatalf("❌ Errore inizializzazione wrapper: %v", err)
 	}
 	
 	// Configurazione watcher
 	config := watcher.WatcherConfig{
 		Paths: []string{"."}, // Monitora directory corrente
-		Compiler: tweegoCompiler,
+		Compiler: tweegoWrapper,
 		CompileOpts: &compiler.CompileOptions{
 			Format: "harlowe-3",
 			Output: "test_output.html",
@@ -208,16 +208,16 @@ func testWatcher() {
 }
 
 func startAPIServer() {
-	// Crea il compiler
-	tweegoCompiler, err := compiler.NewTweegoCompiler("", "./output")
+	// Crea il wrapper per Tweego
+	tweegoWrapper, err := compiler.NewTweegoWrapper("", "./output")
 	if err != nil {
-		log.Fatalf("❌ Errore inizializzazione compiler: %v", err)
+		log.Fatalf("❌ Errore inizializzazione wrapper: %v", err)
 	}
 	
 	// Configurazione server
 	config := api.ServerConfig{
 		Port:       8080,
-		Compiler:   tweegoCompiler,
+		Compiler:   tweegoWrapper,
 		EnableCORS: true,
 		Debug:      true,
 	}

@@ -15,7 +15,7 @@ import (
 type FileWatcher struct {
 	watcher       *fsnotify.Watcher
 	watchedPaths  []string
-	compiler      *compiler.TweegoCompiler
+	compiler      *compiler.TweegoWrapper
 	compileOpts   *compiler.CompileOptions
 	debounceTime  time.Duration
 	eventChan     chan WatchEvent
@@ -33,7 +33,7 @@ type WatchEvent struct {
 // WatcherConfig configurazione per il watcher
 type WatcherConfig struct {
 	Paths         []string                  // Path da monitorare
-	Compiler      *compiler.TweegoCompiler  // Compiler da usare
+	Compiler      *compiler.TweegoWrapper   // Wrapper Tweego da usare
 	CompileOpts   *compiler.CompileOptions  // Opzioni compilazione
 	DebounceTime  time.Duration             // Tempo di debounce (default: 500ms)
 	OnEvent       func(WatchEvent)          // Callback per eventi
@@ -68,7 +68,7 @@ func NewFileWatcher(config WatcherConfig) (*FileWatcher, error) {
 		if err := watcher.Add(path); err != nil {
 			return nil, fmt.Errorf("errore aggiunta path %s: %w", path, err)
 		}
-		log.Printf("Watching: %s", path)
+		log.Printf("👀 Watching: %s", path)
 	}
 
 	return fw, nil
@@ -81,7 +81,7 @@ func (fw *FileWatcher) Start() error {
 	}
 
 	fw.isRunning = true
-	log.Println("File watcher avviato!")
+	log.Println("🚀 File watcher avviato!")
 
 	// Map per debouncing
 	debounceMap := make(map[string]*time.Timer)
@@ -120,7 +120,7 @@ func (fw *FileWatcher) Start() error {
 					Timestamp: time.Now(),
 				}
 
-				log.Printf("File %s: %s", eventType, filepath.Base(event.Name))
+				log.Printf("📝 File %s: %s", eventType, filepath.Base(event.Name))
 
 				// Invia evento al canale
 				fw.eventChan <- watchEvent
@@ -142,10 +142,10 @@ func (fw *FileWatcher) Start() error {
 				if !ok {
 					return
 				}
-				log.Printf("Errore watcher: %v", err)
+				log.Printf("❌ Errore watcher: %v", err)
 
 			case <-fw.stopChan:
-				log.Println("File watcher fermato")
+				log.Println("🛑 File watcher fermato")
 				return
 			}
 		}
@@ -205,7 +205,7 @@ func (fw *FileWatcher) RemovePath(path string) error {
 		}
 	}
 	
-	log.Printf("Stopped watching: %s", path)
+	log.Printf("👁️  Stopped watching: %s", path)
 	return nil
 }
 
@@ -222,7 +222,7 @@ func (fw *FileWatcher) recompile(filePath string) {
 	elapsed := time.Since(start)
 
 	if err != nil {
-		log.Printf("Compilazione fallita (%v): %v", elapsed, err)
+		log.Printf("❌ Compilazione fallita (%v): %v", elapsed, err)
 		if result != nil && result.ErrorMessage != "" {
 			log.Printf("   %s", result.ErrorMessage)
 		}
@@ -230,10 +230,9 @@ func (fw *FileWatcher) recompile(filePath string) {
 	}
 
 	if result.Success {
-		log.Printf("Compilato con successo in %v", elapsed)
+		log.Printf("✅ Compilato con successo in %v", elapsed)
 		if len(result.Warnings) > 0 {
-			log.Printf("%d warning(s)", len(result.Warnings))
+			log.Printf("⚠️  %d warning(s)", len(result.Warnings))
 		}
 	}
 }
-

@@ -9,8 +9,8 @@ import (
 	"strings"
 )
 
-// TweegoCompiler gestisce la compilazione con Tweego
-type TweegoCompiler struct {
+// TweegoWrapper gestisce l'integrazione con Tweego (wrapper esterno)
+type TweegoWrapper struct {
 	tweegoPath string
 	workDir    string
 }
@@ -35,8 +35,8 @@ type CompileResult struct {
 	OutputFile   string
 }
 
-// NewTweegoCompiler crea un nuovo compiler
-func NewTweegoCompiler(tweegoPath string, workDir string) (*TweegoCompiler, error) {
+// NewTweegoWrapper crea un nuovo wrapper per Tweego
+func NewTweegoWrapper(tweegoPath string, workDir string) (*TweegoWrapper, error) {
 	// Se tweegoPath è vuoto, cerca tweego nel PATH
 	if tweegoPath == "" {
 		path, err := exec.LookPath("tweego")
@@ -58,14 +58,14 @@ func NewTweegoCompiler(tweegoPath string, workDir string) (*TweegoCompiler, erro
 		}
 	}
 
-	return &TweegoCompiler{
+	return &TweegoWrapper{
 		tweegoPath: tweegoPath,
 		workDir:    workDir,
 	}, nil
 }
 
-// Compile compila un file .twee in HTML
-func (tc *TweegoCompiler) Compile(inputFile string, options *CompileOptions) (*CompileResult, error) {
+// Compile compila un file .twee in HTML usando Tweego
+func (tw *TweegoWrapper) Compile(inputFile string, options *CompileOptions) (*CompileResult, error) {
 	result := &CompileResult{
 		Success: false,
 	}
@@ -82,8 +82,8 @@ func (tc *TweegoCompiler) Compile(inputFile string, options *CompileOptions) (*C
 
 	// Output file
 	outputPath := options.Output
-	if !filepath.IsAbs(outputPath) && tc.workDir != "" {
-		outputPath = filepath.Join(tc.workDir, outputPath)
+	if !filepath.IsAbs(outputPath) && tw.workDir != "" {
+		outputPath = filepath.Join(tw.workDir, outputPath)
 	}
 	args = append(args, "-o", outputPath)
 
@@ -119,7 +119,7 @@ func (tc *TweegoCompiler) Compile(inputFile string, options *CompileOptions) (*C
 	args = append(args, inputFile)
 
 	// Esegui tweego
-	cmd := exec.Command(tc.tweegoPath, args...)
+	cmd := exec.Command(tw.tweegoPath, args...)
 	
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -162,8 +162,8 @@ func (tc *TweegoCompiler) Compile(inputFile string, options *CompileOptions) (*C
 }
 
 // GetVersion ritorna la versione di Tweego installata
-func (tc *TweegoCompiler) GetVersion() (string, error) {
-	cmd := exec.Command(tc.tweegoPath, "--version")
+func (tw *TweegoWrapper) GetVersion() (string, error) {
+	cmd := exec.Command(tw.tweegoPath, "--version")
 	output, err := cmd.Output()
 	if err != nil {
 		return "", fmt.Errorf("impossibile ottenere versione tweego: %w", err)
@@ -171,9 +171,9 @@ func (tc *TweegoCompiler) GetVersion() (string, error) {
 	return strings.TrimSpace(string(output)), nil
 }
 
-// ListFormats elenca i formati disponibili
-func (tc *TweegoCompiler) ListFormats() ([]string, error) {
-	cmd := exec.Command(tc.tweegoPath, "--list-formats")
+// ListFormats elenca i formati disponibili in Tweego
+func (tw *TweegoWrapper) ListFormats() ([]string, error) {
+	cmd := exec.Command(tw.tweegoPath, "--list-formats")
 	
 	// Cattura sia stdout che stderr
 	var stdout, stderr bytes.Buffer

@@ -1,28 +1,26 @@
-
+# server
 output/
 *.html
 *.exe
 tweego-editor
 
-
+# go file
 go.sum
 vendor/
 
-
+# other
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
-
-
 .DS_Store
 Thumbs.db
 
-
+# log file
 *.log
 
-
+# temporary file
 tmp/
 temp/
 *.tmp

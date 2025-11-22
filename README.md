@@ -269,7 +269,7 @@ tweego-editor/
 │   └── harlowe/
 │       └── parser.go         # Harlowe implementation
 ├── compiler/
-│   └── tweego.go             # Tweego wrapper
+│   └── tweego_wrapper.go             # Tweego wrapper
 ├── watcher/
 │   └── file_watcher.go       # File monitoring with auto-compile
 ├── api/
@@ -380,7 +380,8 @@ This is often normal for Tweego commands that write to stderr. The latest versio
 
 This project is distributed under the MIT License. See the `LICENSE` file for details.
 
-**Note**: This project uses [Tweego](https://www.motoslave.net/tweego/) which is licensed under the BSD 2-Clause License.
+**Note**: This project uses [Tweego](https://www.motoslave.net/tweego/) which is licensed under the BSD 2-Clause License. 
+#### This is a wrapper for external Tweego tool, not Tweego source code.
 
 ## 👥 Authors
 

@@ -19,7 +19,7 @@ import (
 // Server rappresenta il server API
 type Server struct {
 	router       *gin.Engine
-	compiler     *compiler.TweegoCompiler
+	compiler     *compiler.TweegoWrapper
 	watcher      *watcher.FileWatcher
 	watcherMutex sync.Mutex
 	wsClients    map[*websocket.Conn]bool
@@ -30,7 +30,7 @@ type Server struct {
 // ServerConfig configurazione del server
 type ServerConfig struct {
 	Port         int
-	Compiler     *compiler.TweegoCompiler
+	Compiler     *compiler.TweegoWrapper
 	EnableCORS   bool
 	Debug        bool
 }
@@ -445,3 +445,4 @@ func (s *Server) broadcastWatcherEvents() {
 		}
 	}
 }
+
