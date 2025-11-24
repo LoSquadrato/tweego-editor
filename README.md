@@ -348,10 +348,11 @@ This is often normal for Tweego commands that write to stderr. The latest versio
 - [x] WebSocket for real-time events
 
 ### v0.2.0 (In Progress)
+- [x] Twee file validation real time control
 - [ ] Unit tests for parser and compiler
 - [ ] Enhanced SugarCube parser
 - [ ] Enhanced Chapbook parser
-- [ ] Path simulator for variable debugging
+- [ ] Path simulator for variable debugging (in active development)
 - [ ] API authentication
 - [ ] Rate limiting
 

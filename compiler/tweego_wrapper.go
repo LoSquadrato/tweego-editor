@@ -70,6 +70,12 @@ func (tw *TweegoWrapper) Compile(inputFile string, options *CompileOptions) (*Co
 		Success: false,
 	}
 
+	// Validazione pre-compilazione
+	if err := tw.validateBeforeCompile(inputFile, options); err != nil {
+		result.ErrorMessage = err.Error()
+		return result, err
+	}
+
 	// Opzioni di default
 	if options == nil {
 		options = &CompileOptions{
@@ -218,4 +224,49 @@ func (tw *TweegoWrapper) ListFormats() ([]string, error) {
 	}
 
 	return formats, nil
+}
+
+// validateBeforeCompile valida file e opzioni prima della compilazione
+func (tw *TweegoWrapper) validateBeforeCompile(inputFile string, options *CompileOptions) error {
+	// 1. Verifica che il file esista
+	if _, err := os.Stat(inputFile); os.IsNotExist(err) {
+		return fmt.Errorf("file input non trovato: %s", inputFile)
+	}
+
+	// 2. Verifica integrità del file (checksum base)
+	fileInfo, err := os.Stat(inputFile)
+	if err != nil {
+		return fmt.Errorf("impossibile leggere info file: %w", err)
+	}
+	
+	if fileInfo.Size() == 0 {
+		return fmt.Errorf("file input vuoto: %s", inputFile)
+	}
+
+	// 3. Verifica che il formato esista (se specificato)
+	if options != nil && options.Format != "" {
+		formats, err := tw.ListFormats()
+		if err != nil {
+			return fmt.Errorf("impossibile verificare formato: %w", err)
+		}
+
+		formatExists := false
+		for _, f := range formats {
+			if f == options.Format {
+				formatExists = true
+				break
+			}
+		}
+
+		if !formatExists {
+			return fmt.Errorf("formato '%s' non riconosciuto. Formati disponibili: %v", options.Format, formats)
+		}
+	}
+
+	// 4. Verifica che il file sia .twee
+	if !strings.HasSuffix(strings.ToLower(inputFile), ".twee") {
+		return fmt.Errorf("il file deve avere estensione .twee")
+	}
+
+	return nil
 }

@@ -25,4 +25,7 @@ tmp/
 temp/
 *.tmp
 
+# test
+*.twee
+*.sh
 

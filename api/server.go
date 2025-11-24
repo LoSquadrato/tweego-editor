@@ -13,6 +13,7 @@ import (
 	"tweego-editor/compiler"
 	"tweego-editor/formats/harlowe"
 	"tweego-editor/parser"
+	"tweego-editor/simulator"
 	"tweego-editor/watcher"
 )
 
@@ -83,10 +84,16 @@ func (s *Server) setupRoutes() {
 		// Story endpoints
 		api.POST("/story/parse", s.parseStory)
 		api.POST("/story/compile", s.compileStory)
+		api.POST("/story/validate", s.validateStory)
 
 		// Passage endpoints
 		api.GET("/story/:file/passages", s.getPassages)
 		api.GET("/story/:file/passage/:title", s.getPassage)
+
+		// Path Simulator endpoints
+		api.POST("/simulator/validate", s.validatePath)
+		api.POST("/simulator/simulate", s.simulatePath)
+		api.POST("/simulator/suggest", s.suggestPaths)
 
 		// Watcher endpoints
 		api.POST("/watch/start", s.startWatcher)
@@ -121,6 +128,26 @@ func (s *Server) healthCheck(c *gin.Context) {
 		"status": "ok",
 		"version": "0.1.0",
 	})
+}
+
+// ValidateStoryRequest richiesta di validazione
+type ValidateStoryRequest struct {
+	FilePath string `json:"file_path" binding:"required"`
+}
+
+// validateStory valida un file .twee
+func (s *Server) validateStory(c *gin.Context) {
+	var req ValidateStoryRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Valida il file
+	tweeParser := parser.NewTweeParser(req.FilePath)
+	validation := tweeParser.Validate()
+
+	c.JSON(http.StatusOK, validation)
 }
 
 // ParseStoryRequest richiesta di parsing
@@ -395,6 +422,113 @@ func (s *Server) getVersion(c *gin.Context) {
 }
 
 // ============================================
+// Path Simulator Handlers
+// ============================================
+
+// ValidatePathRequest richiesta di validazione path
+type ValidatePathRequest struct {
+	FilePath string   `json:"file_path" binding:"required"`
+	Path     []string `json:"path" binding:"required"`
+}
+
+// validatePath valida un percorso
+func (s *Server) validatePath(c *gin.Context) {
+	var req ValidatePathRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Parse la storia
+	tweeParser := parser.NewTweeParser(req.FilePath)
+	story, err := tweeParser.Parse()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Crea simulator e valida
+	simulator := simulator.NewPathSimulator(story)
+	errors := simulator.ValidatePath(req.Path)
+
+	c.JSON(http.StatusOK, gin.H{
+		"valid":  len(errors) == 0,
+		"path":   req.Path,
+		"errors": errors,
+	})
+}
+
+// SimulatePathRequest richiesta di simulazione path
+type SimulatePathRequest struct {
+	FilePath string   `json:"file_path" binding:"required"`
+	Path     []string `json:"path" binding:"required"`
+}
+
+// simulatePath simula l'esecuzione di un percorso
+func (s *Server) simulatePath(c *gin.Context) {
+	var req SimulatePathRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Parse la storia
+	tweeParser := parser.NewTweeParser(req.FilePath)
+	story, err := tweeParser.Parse()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Crea simulator e simula
+	sim := simulator.NewPathSimulator(story)
+	result := sim.SimulatePath(req.Path)
+
+	c.JSON(http.StatusOK, result)
+}
+
+// SuggestPathsRequest richiesta di suggerimento percorsi
+type SuggestPathsRequest struct {
+	FilePath      string `json:"file_path" binding:"required"`
+	StartPassage  string `json:"start_passage" binding:"required"`
+	MaxDepth      int    `json:"max_depth"`
+}
+
+// suggestPaths suggerisce percorsi validi
+func (s *Server) suggestPaths(c *gin.Context) {
+	var req SuggestPathsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Default max depth
+	if req.MaxDepth == 0 || req.MaxDepth > 10 {
+		req.MaxDepth = 5
+	}
+
+	// Parse la storia
+	tweeParser := parser.NewTweeParser(req.FilePath)
+	story, err := tweeParser.Parse()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Crea simulator e suggerisci
+	sim := simulator.NewPathSimulator(story)
+	paths := sim.GetSuggestedPaths(req.StartPassage, req.MaxDepth)
+
+	c.JSON(http.StatusOK, gin.H{
+		"success":       true,
+		"start_passage": req.StartPassage,
+		"max_depth":     req.MaxDepth,
+		"paths":         paths,
+		"count":         len(paths),
+	})
+}
+
+// ============================================
 // WebSocket
 // ============================================
 
@@ -445,4 +579,3 @@ func (s *Server) broadcastWatcherEvents() {
 		}
 	}
 }
-

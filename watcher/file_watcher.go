@@ -9,6 +9,7 @@ import (
 
 	"github.com/fsnotify/fsnotify"
 	"tweego-editor/compiler"
+	"tweego-editor/parser"
 )
 
 // FileWatcher monitora cambiamenti ai file
@@ -217,6 +218,32 @@ func (fw *FileWatcher) recompile(filePath string) {
 
 	log.Printf("🔄 Ricompilazione: %s", filepath.Base(filePath))
 	
+	// Valida il file prima di compilare
+	tweeParser := parser.NewTweeParser(filePath)
+	validation := tweeParser.Validate()
+	
+	if !validation.Valid {
+		log.Printf("❌ Validazione fallita per %s:", filepath.Base(filePath))
+		for _, err := range validation.Errors {
+			log.Printf("   - %s", err.Message)
+		}
+		
+		// Invia evento di errore ma non bloccare il watcher
+		fw.eventChan <- WatchEvent{
+			Type:      "validation_error",
+			Path:      filePath,
+			Timestamp: time.Now(),
+		}
+		return
+	}
+	
+	// Mostra warning se presenti
+	if len(validation.Warnings) > 0 {
+		for _, warn := range validation.Warnings {
+			log.Printf("⚠️  %s", warn.Message)
+		}
+	}
+	
 	start := time.Now()
 	result, err := fw.compiler.Compile(filePath, fw.compileOpts)
 	elapsed := time.Since(start)
@@ -226,6 +253,13 @@ func (fw *FileWatcher) recompile(filePath string) {
 		if result != nil && result.ErrorMessage != "" {
 			log.Printf("   %s", result.ErrorMessage)
 		}
+		
+		// Invia evento di errore
+		fw.eventChan <- WatchEvent{
+			Type:      "compile_error",
+			Path:      filePath,
+			Timestamp: time.Now(),
+		}
 		return
 	}
 
@@ -233,6 +267,13 @@ func (fw *FileWatcher) recompile(filePath string) {
 		log.Printf("✅ Compilato con successo in %v", elapsed)
 		if len(result.Warnings) > 0 {
 			log.Printf("⚠️  %d warning(s)", len(result.Warnings))
+		}
+		
+		// Invia evento di successo
+		fw.eventChan <- WatchEvent{
+			Type:      "compile_success",
+			Path:      filePath,
+			Timestamp: time.Now(),
 		}
 	}
 }
