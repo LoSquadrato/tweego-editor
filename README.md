@@ -349,7 +349,7 @@ This is often normal for Tweego commands that write to stderr. The latest versio
 
 ### v0.2.0 (In Progress)
 - [x] Twee file validation real time control
-- [ ] Unit tests for parser and compiler
+- [x] Unit tests for parser and compiler
 - [ ] Enhanced SugarCube parser
 - [ ] Enhanced Chapbook parser
 - [ ] Path simulator for variable debugging (in active development)

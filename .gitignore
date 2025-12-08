@@ -26,6 +26,6 @@ temp/
 *.tmp
 
 # test
-*.twee
+test/harlowe/
 *.sh
-
+*.twee

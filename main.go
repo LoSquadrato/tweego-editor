@@ -11,7 +11,10 @@ import (
 	"tweego-editor/compiler"
 	"tweego-editor/formats/harlowe"
 	"tweego-editor/parser"
+	"tweego-editor/test"
 	"tweego-editor/watcher"
+
+	_ "tweego-editor/formats/harlowe" // Registra il formato Harlowe
 )
 
 func main() {
@@ -24,7 +27,8 @@ func main() {
 	fmt.Println("2. Test Compiler")
 	fmt.Println("3. Watch Mode (auto-ricompila)")
 	fmt.Println("4. API Server (REST + WebSocket)")
-	fmt.Print("\nScelta (1/2/3/4): ")
+	fmt.Println("5. Test Batch (per formato)")
+	fmt.Print("\nScelta (1/2/3/4/5): ")
 	
 	reader := bufio.NewReader(os.Stdin)
 	choice, _ := reader.ReadString('\n')
@@ -45,6 +49,9 @@ func main() {
 	case "4":
 		fmt.Println("🌐 Starting API Server...")
 		startAPIServer()
+	case "5":
+		fmt.Println("🧪 Test Batch per Formato...")
+		testBatch()
 	default:
 		fmt.Println("❌ Scelta non valida")
 	}
@@ -246,5 +253,77 @@ func startAPIServer() {
 	
 	if err := server.Start(); err != nil {
 		log.Fatalf("❌ Errore avvio server: %v", err)
+	}
+}
+
+func testBatch() {
+	reader := bufio.NewReader(os.Stdin)
+	
+	// Crea il wrapper per Tweego
+	tweegoWrapper, err := compiler.NewTweegoWrapper("", "")
+	if err != nil {
+		log.Fatalf("❌ Errore inizializzazione wrapper: %v", err)
+	}
+
+	// Crea test runner
+	runner := test.NewTestRunner("./test", tweegoWrapper)
+
+	// Ottieni formati disponibili
+	formats, err := runner.GetAvailableFormats()
+	if err != nil {
+		log.Fatalf("❌ Errore lettura cartelle test: %v", err)
+	}
+
+	if len(formats) == 0 {
+		fmt.Println("❌ Nessuna cartella di test trovata in ./test")
+		fmt.Println("   Crea una cartella come ./test/harlowe con file .twee")
+		return
+	}
+
+	// Mostra formati disponibili
+	fmt.Println("📂 Cartelle test disponibili:")
+	for i, format := range formats {
+		fmt.Printf("   %d. %s\n", i+1, format)
+	}
+	fmt.Print("\nScegli formato (numero o nome): ")
+
+	input, _ := reader.ReadString('\n')
+	input = strings.TrimSpace(input)
+
+	// Determina il formato scelto
+	var selectedFormat string
+	
+	// Prova a interpretare come numero
+	var num int
+	if _, err := fmt.Sscanf(input, "%d", &num); err == nil && num > 0 && num <= len(formats) {
+		selectedFormat = formats[num-1]
+	} else {
+		// Cerca per nome
+		for _, f := range formats {
+			if strings.EqualFold(f, input) {
+				selectedFormat = f
+				break
+			}
+		}
+	}
+
+	if selectedFormat == "" {
+		fmt.Printf("❌ Formato '%s' non trovato\n", input)
+		return
+	}
+
+	fmt.Printf("\n🚀 Avvio test per formato: %s\n", selectedFormat)
+
+	// Esegui i test
+	summary, err := runner.RunTests(selectedFormat)
+	if err != nil {
+		log.Fatalf("❌ Errore esecuzione test: %v", err)
+	}
+
+	// Risultato finale
+	if summary.ParseFailed == 0 && summary.CompileFailed == 0 {
+		fmt.Println("\n✅ Tutti i test passati!")
+	} else {
+		fmt.Println("\n⚠️  Alcuni test falliti - controlla i file JSON per i dettagli")
 	}
 }
