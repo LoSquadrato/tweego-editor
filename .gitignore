@@ -29,3 +29,5 @@ temp/
 test/harlowe/
 *.sh
 *.twee
+formats/harlowe/evaluator_test.go
+formats/harlowe/literals_test.go
