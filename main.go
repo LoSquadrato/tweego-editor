@@ -14,7 +14,7 @@ import (
 	"tweego-editor/test"
 	"tweego-editor/watcher"
 
-	_ "tweego-editor/formats/harlowe" // Registra il formato Harlowe
+	_ "tweego-editor/formats/harlowe"
 )
 
 func main() {

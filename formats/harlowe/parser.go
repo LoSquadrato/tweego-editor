@@ -3,7 +3,16 @@ package harlowe
 import (
 	"regexp"
 	"strings"
+	
+	"tweego-editor/formats"
 )
+
+// init registra il formato Harlowe all'avvio
+func init() {
+	formats.RegisterFormat("harlowe", func() formats.StoryFormat {
+		return NewHarloweFormat()
+	})
+}
 
 // HarloweFormat implementa StoryFormat per Harlowe
 type HarloweFormat struct{}
@@ -209,3 +218,4 @@ func (h *HarloweFormat) StripCode(content string) string {
 	
 	return strings.TrimSpace(cleaned)
 }
+
