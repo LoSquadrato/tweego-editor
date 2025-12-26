@@ -3,7 +3,7 @@ package harlowe
 import (
 	"regexp"
 	"strings"
-	
+
 	"tweego-editor/formats"
 )
 
@@ -219,3 +219,108 @@ func (h *HarloweFormat) StripCode(content string) string {
 	return strings.TrimSpace(cleaned)
 }
 
+// === LITERALS - Wrapper per le funzioni in literals.go ===
+
+// ParseArrayLiteral parsa un singolo array literal (implementa StoryFormat interface)
+func (h *HarloweFormat) ParseArrayLiteral(content string) []interface{} {
+	eval := NewHarloweEvaluator(nil)
+	result, _ := ParseArrayLiteral(content, eval)
+	return result
+}
+
+// ParseDatamapLiteral parsa un singolo datamap literal (implementa StoryFormat interface)
+func (h *HarloweFormat) ParseDatamapLiteral(content string) map[string]interface{} {
+	eval := NewHarloweEvaluator(nil)
+	result, _ := ParseDatamapLiteral(content, eval)
+	return result
+}
+
+// ParseDatasetLiteral parsa un singolo dataset literal (implementa StoryFormat interface)
+func (h *HarloweFormat) ParseDatasetLiteral(content string) []interface{} {
+	eval := NewHarloweEvaluator(nil)
+	resultMap, _ := ParseDatasetLiteral(content, eval)
+	// Converti map[string]bool in []interface{}
+	result := make([]interface{}, 0, len(resultMap))
+	for key := range resultMap {
+		result = append(result, key)
+	}
+	return result
+}
+
+// FindAllArrayLiterals trova tutti gli array literals nel contenuto
+func (h *HarloweFormat) FindAllArrayLiterals(content string) [][]interface{} {
+	arrayRegex := regexp.MustCompile(`\(a:\s*[^)]*\)`)
+	matches := arrayRegex.FindAllString(content, -1)
+	
+	results := make([][]interface{}, 0, len(matches))
+	for _, match := range matches {
+		if parsed := h.ParseArrayLiteral(match); parsed != nil {
+			results = append(results, parsed)
+		}
+	}
+	return results
+}
+
+// FindAllDatamapLiterals trova tutti i datamap literals nel contenuto
+func (h *HarloweFormat) FindAllDatamapLiterals(content string) []map[string]interface{} {
+	dmRegex := regexp.MustCompile(`\(dm:\s*[^)]*\)`)
+	matches := dmRegex.FindAllString(content, -1)
+	
+	results := make([]map[string]interface{}, 0, len(matches))
+	for _, match := range matches {
+		if parsed := h.ParseDatamapLiteral(match); parsed != nil {
+			results = append(results, parsed)
+		}
+	}
+	return results
+}
+
+// FindAllDatasetLiterals trova tutti i dataset literals nel contenuto
+func (h *HarloweFormat) FindAllDatasetLiterals(content string) [][]interface{} {
+	dsRegex := regexp.MustCompile(`\(ds:\s*[^)]*\)`)
+	matches := dsRegex.FindAllString(content, -1)
+	
+	results := make([][]interface{}, 0, len(matches))
+	for _, match := range matches {
+		if parsed := h.ParseDatasetLiteral(match); parsed != nil {
+			results = append(results, parsed)
+		}
+	}
+	return results
+}
+
+// ExtractAllLiterals estrae tutti i literals con raw + parsed
+func (h *HarloweFormat) ExtractAllLiterals(content string) *formats.LiteralsResult {
+	result := &formats.LiteralsResult{
+		Arrays:   []formats.LiteralInfo{},
+		Datamaps: []formats.LiteralInfo{},
+		Datasets: []formats.LiteralInfo{},
+	}
+
+	arrayRegex := regexp.MustCompile(`\(a:\s*[^)]*\)`)
+	datamapRegex := regexp.MustCompile(`\(dm:\s*[^)]*\)`)
+	datasetRegex := regexp.MustCompile(`\(ds:\s*[^)]*\)`)
+
+	// Arrays
+	for _, raw := range arrayRegex.FindAllString(content, -1) {
+		if parsed := h.ParseArrayLiteral(raw); parsed != nil {
+			result.Arrays = append(result.Arrays, formats.LiteralInfo{Raw: raw, Parsed: parsed})
+		}
+	}
+
+	// Datamaps
+	for _, raw := range datamapRegex.FindAllString(content, -1) {
+		if parsed := h.ParseDatamapLiteral(raw); parsed != nil {
+			result.Datamaps = append(result.Datamaps, formats.LiteralInfo{Raw: raw, Parsed: parsed})
+		}
+	}
+
+	// Datasets
+	for _, raw := range datasetRegex.FindAllString(content, -1) {
+		if parsed := h.ParseDatasetLiteral(raw); parsed != nil {
+			result.Datasets = append(result.Datasets, formats.LiteralInfo{Raw: raw, Parsed: parsed})
+		}
+	}
+
+	return result
+}
