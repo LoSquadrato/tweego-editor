@@ -2,9 +2,9 @@ package formats
 
 // LiteralInfo contiene il raw e il valore parsato di un literal
 type LiteralInfo struct {
-	Passage string      `json:"passage,omitempty"` // Passaggio dove è stato trovato
-	Raw     string      `json:"raw"`               // Stringa originale es: (a: "spada", "scudo")
-	Parsed  interface{} `json:"parsed"`            // Valore parsato es: []interface{}{"spada", "scudo"}
+	Passage string      `json:"passage,omitempty"`
+	Raw     string      `json:"raw"`
+	Parsed  interface{} `json:"parsed"`
 }
 
 // LiteralsResult contiene tutti i literals estratti da un contenuto
@@ -14,10 +14,46 @@ type LiteralsResult struct {
 	Datasets []LiteralInfo `json:"datasets"`
 }
 
+// ============================================
+// EVALUATOR INTERFACE (NUOVO!)
+// ============================================
+
+// Evaluator definisce l'interfaccia per gli evaluator dei vari formati
+// L'evaluator riceve lo stato e il contesto dal PathSimulator
+type Evaluator interface {
+	// Gestione stato variabili
+	GetState() map[string]interface{}
+	SetState(state map[string]interface{})
+
+	// Valutazione espressioni
+	EvaluateExpression(expression string) (interface{}, error)
+	EvaluateCondition(condition string) (bool, error)
+
+	// Contesto per valutazione (passato dal PathSimulator)
+	SetVisitedPassages(visited map[string]int)
+	SetHistory(history []string)
+	SetCurrentPassage(passageName string)
+}
+
+// ============================================
+// STORY FORMAT INTERFACE (AGGIORNATO!)
+// ============================================
+
 // StoryFormat definisce l'interface per i diversi formati
 type StoryFormat interface {
 	// GetFormatName restituisce il nome del formato
 	GetFormatName() string
+
+	// CreateEvaluator crea un nuovo evaluator per questo formato
+	// NUOVO METODO per supportare il PathSimulator format-agnostic
+	CreateEvaluator(initialState map[string]interface{}) Evaluator
+
+	// ProcessPassageContent processa il contenuto di un passaggio
+	// modificando lo stato dell'evaluator passato.
+	// NUOVO METODO per permettere al PathSimulator di processare
+	// i passaggi senza duplicare la logica di parsing
+	ProcessPassageContent(content string, eval Evaluator) error
+
 
 	// ParseLinks estrae i collegamenti dal contenuto
 	ParseLinks(content string) []string
@@ -31,15 +67,12 @@ type StoryFormat interface {
 	// === LITERALS ===
 
 	// ParseArrayLiteral parsa un singolo array literal
-	// Es: (a: "spada", "scudo") -> []interface{}{"spada", "scudo"}
 	ParseArrayLiteral(content string) []interface{}
 
 	// ParseDatamapLiteral parsa un singolo datamap literal
-	// Es: (dm: "nome", "Eroe") -> map[string]interface{}{"nome": "Eroe"}
 	ParseDatamapLiteral(content string) map[string]interface{}
 
 	// ParseDatasetLiteral parsa un singolo dataset literal
-	// Es: (ds: "a", "b") -> []interface{}{"a", "b"}
 	ParseDatasetLiteral(content string) []interface{}
 
 	// FindAllArrayLiterals trova tutti gli array literals nel contenuto
@@ -52,6 +85,5 @@ type StoryFormat interface {
 	FindAllDatasetLiterals(content string) [][]interface{}
 
 	// ExtractAllLiterals estrae tutti i literals con raw + parsed
-	// Questo è il metodo principale che il runner dovrebbe usare
 	ExtractAllLiterals(content string) *LiteralsResult
 }

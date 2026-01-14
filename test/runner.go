@@ -147,6 +147,15 @@ func (tr *TestRunner) RunTests(format string) (*TestSummary, error) {
 			summary.ParseSuccess++
 			fmt.Printf("   ✅ Parsing OK - %d passaggi\n", parseResult.Story.PassageCount)
 			
+			// Mostra formato estratto
+			if parseResult.Story.Format != "" {
+				fmt.Printf("   📋 Formato: %s", parseResult.Story.Format)
+				if parseResult.Story.FormatVersion != "" {
+					fmt.Printf(" v%s", parseResult.Story.FormatVersion)
+				}
+				fmt.Println()
+			}
+			
 			// Conta i literals totali
 			totalArrays, totalDatamaps, totalDatasets := tr.countLiterals(parseResult)
 			if totalArrays > 0 || totalDatamaps > 0 || totalDatasets > 0 {
@@ -166,17 +175,31 @@ func (tr *TestRunner) RunTests(format string) (*TestSummary, error) {
 			fmt.Printf("   💾 %s\n", filepath.Base(parseJSONPath))
 		}
 
-		// 2. Compilazione
-		compileResult := tr.compileFile(tweeFile)
-		if compileResult.Success {
-			summary.CompileSuccess++
-			fmt.Printf("   ✅ Compilazione OK → %s\n", filepath.Base(compileResult.OutputFile))
-			if len(compileResult.Warnings) > 0 {
-				fmt.Printf("   ⚠️  %d warning(s)\n", len(compileResult.Warnings))
+		// 2. Compilazione (solo se parsing è riuscito)
+		var compileResult *CompiledOutput
+		if parseResult.Success {
+			// Usa il formato estratto dal file
+			compileResult = tr.compileFile(tweeFile, parseResult.Story.Format, parseResult.Story.FormatVersion)
+			
+			if compileResult.Success {
+				summary.CompileSuccess++
+				fmt.Printf("   ✅ Compilazione OK → %s\n", filepath.Base(compileResult.OutputFile))
+				if len(compileResult.Warnings) > 0 {
+					fmt.Printf("   ⚠️  %d warning(s)\n", len(compileResult.Warnings))
+				}
+			} else {
+				summary.CompileFailed++
+				fmt.Printf("   ❌ Compilazione FAILED: %s\n", compileResult.Error)
 			}
 		} else {
+			// Se il parsing è fallito, la compilazione fallisce automaticamente
+			compileResult = &CompiledOutput{
+				Filename:   filename,
+				CompiledAt: time.Now().Format(time.RFC3339),
+				Success:    false,
+				Error:      "Parsing fallito - compilazione saltata",
+			}
 			summary.CompileFailed++
-			fmt.Printf("   ❌ Compilazione FAILED: %s\n", compileResult.Error)
 		}
 
 		// Salva JSON compilazione
@@ -252,17 +275,6 @@ func (tr *TestRunner) parseFile(filePath string) *ParsedOutput {
 	for title, passage := range story.Passages {
 		// Estrai literals usando il metodo del parser (tutta la logica è nel formato!)
 		literals := tr.formatParser.ExtractAllLiterals(passage.Content)
-		
-		// Aggiungi il nome del passaggio a ogni literal
-		for i := range literals.Arrays {
-			literals.Arrays[i].Passage = passage.Title
-		}
-		for i := range literals.Datamaps {
-			literals.Datamaps[i].Passage = passage.Title
-		}
-		for i := range literals.Datasets {
-			literals.Datasets[i].Passage = passage.Title
-		}
 
 		passageOutput := &PassageOutput{
 			Title:     passage.Title,
@@ -273,49 +285,39 @@ func (tr *TestRunner) parseFile(filePath string) *ParsedOutput {
 			Preview:   tr.formatParser.StripCode(passage.Content),
 			Literals:  literals,
 		}
+
 		storyOutput.Passages[title] = passageOutput
 	}
 
 	result.Story = storyOutput
-
 	return result
 }
 
-// countLiterals conta il totale dei literals in un ParsedOutput
-func (tr *TestRunner) countLiterals(output *ParsedOutput) (arrays, datamaps, datasets int) {
-	if output.Story == nil {
-		return 0, 0, 0
-	}
-	
-	for _, passage := range output.Story.Passages {
-		if passage.Literals != nil {
-			arrays += len(passage.Literals.Arrays)
-			datamaps += len(passage.Literals.Datamaps)
-			datasets += len(passage.Literals.Datasets)
-		}
-	}
-	
-	return arrays, datamaps, datasets
-}
-
-// compileFile compila un singolo file .twee
-func (tr *TestRunner) compileFile(filePath string) *CompiledOutput {
+// compileFile compila un singolo file .twee usando il formato estratto
+func (tr *TestRunner) compileFile(filePath string, storyFormat string, formatVersion string) *CompiledOutput {
 	result := &CompiledOutput{
 		Filename:   filepath.Base(filePath),
 		CompiledAt: time.Now().Format(time.RFC3339),
 	}
 
-	// Determina output path
-	baseName := strings.TrimSuffix(filepath.Base(filePath), ".twee")
-	outputHTML := filepath.Join(tr.formatDir, baseName+"_compiled.html")
+	// Determina il formato da usare per la compilazione
+	compileFormat := tr.determineCompileFormat(storyFormat, formatVersion)
+	
+	if compileFormat == "" {
+		result.Success = false
+		result.Error = fmt.Sprintf("Impossibile determinare formato di compilazione da: format='%s', version='%s'", 
+			storyFormat, formatVersion)
+		return result
+	}
 
-	// Determina formato Tweego
-	tweegoFormat := tr.getTweegoFormat()
+	// Output file
+	
+	outputFile := tr.getOutputPath(filePath, ".html")
 
 	// Compila
 	compileResult, err := tr.compiler.Compile(filePath, &compiler.CompileOptions{
-		Format: tweegoFormat,
-		Output: outputHTML,
+		Format: compileFormat,
+		Output: outputFile,
 	})
 
 	if err != nil {
@@ -331,40 +333,68 @@ func (tr *TestRunner) compileFile(filePath string) *CompiledOutput {
 	result.OutputFile = compileResult.OutputFile
 	result.Warnings = compileResult.Warnings
 
-	if !compileResult.Success {
-		result.Error = compileResult.ErrorMessage
-	}
-
 	return result
 }
 
-// getTweegoFormat restituisce il formato Tweego corrispondente
-func (tr *TestRunner) getTweegoFormat() string {
-	switch tr.format {
-	case "harlowe":
-		return "harlowe-3"
-	case "sugarcube":
-		return "sugarcube-2"
-	case "chapbook":
-		return "chapbook-1"
-	case "snowman":
-		return "snowman-2"
-	default:
-		return "harlowe-3"
+// determineCompileFormat converte il formato estratto nel formato per Tweego
+// Es: "harlowe" + "3.2.3" -> "harlowe-3"
+//     "sugarcube" + "2.36.1" -> "sugarcube-2"
+func (tr *TestRunner) determineCompileFormat(format string, version string) string {
+	if format == "" {
+		return ""
 	}
+
+	// Normalizza il formato (lowercase)
+	format = strings.ToLower(format)
+	
+	// Se non c'è versione, usa il formato base
+	if version == "" {
+		return format
+	}
+
+	// Estrai la versione major (primo numero)
+	versionParts := strings.Split(version, ".")
+	if len(versionParts) == 0 {
+		return format
+	}
+
+	majorVersion := versionParts[0]
+	
+	// Costruisci il formato per Tweego: "formato-major"
+	// Es: "harlowe-3", "sugarcube-2"
+	return fmt.Sprintf("%s-%s", format, majorVersion)
 }
 
-// getOutputPath genera il path per un file di output
-func (tr *TestRunner) getOutputPath(inputPath, suffix string) string {
-	baseName := strings.TrimSuffix(filepath.Base(inputPath), ".twee")
+// getOutputPath genera il percorso del file di output
+func (tr *TestRunner) getOutputPath(inputFile string, suffix string) string {
+	baseName := strings.TrimSuffix(filepath.Base(inputFile), ".twee")
 	return filepath.Join(tr.formatDir, baseName+suffix)
 }
 
-// saveJSON salva un oggetto come JSON
+// saveJSON salva un oggetto in formato JSON
 func (tr *TestRunner) saveJSON(path string, data interface{}) error {
 	jsonData, err := json.MarshalIndent(data, "", "  ")
 	if err != nil {
 		return err
 	}
 	return os.WriteFile(path, jsonData, 0644)
+}
+
+// countLiterals conta i literals totali in un ParsedOutput
+func (tr *TestRunner) countLiterals(result *ParsedOutput) (int, int, int) {
+	totalArrays := 0
+	totalDatamaps := 0
+	totalDatasets := 0
+
+	if result.Story != nil {
+		for _, passage := range result.Story.Passages {
+			if passage.Literals != nil {
+				totalArrays += len(passage.Literals.Arrays)
+				totalDatamaps += len(passage.Literals.Datamaps)
+				totalDatasets += len(passage.Literals.Datasets)
+			}
+		}
+	}
+
+	return totalArrays, totalDatamaps, totalDatasets
 }

@@ -2,6 +2,7 @@ package parser
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"os"
 	"regexp"
@@ -177,6 +178,12 @@ func (tp *TweeParser) Parse() (*Story, error) {
 			// Salva il passaggio precedente se esiste
 			if currentPassage != nil {
 				currentPassage.Content = strings.TrimSpace(contentBuilder.String())
+				
+				// Se è StoryData, estrai metadata
+				if currentPassage.Title == "StoryData" {
+					tp.extractStoryData(story, currentPassage.Content)
+				}
+				
 				story.Passages[currentPassage.Title] = currentPassage
 				contentBuilder.Reset()
 			}
@@ -211,6 +218,12 @@ func (tp *TweeParser) Parse() (*Story, error) {
 	// Salva l'ultimo passaggio
 	if currentPassage != nil {
 		currentPassage.Content = strings.TrimSpace(contentBuilder.String())
+		
+		// Se è StoryData, estrai metadata
+		if currentPassage.Title == "StoryData" {
+			tp.extractStoryData(story, currentPassage.Content)
+		}
+		
 		story.Passages[currentPassage.Title] = currentPassage
 	}
 
@@ -219,4 +232,40 @@ func (tp *TweeParser) Parse() (*Story, error) {
 	}
 
 	return story, nil
+}
+
+// extractStoryData estrae formato, versione, IFID e titolo da StoryData
+func (tp *TweeParser) extractStoryData(story *Story, content string) {
+	// Parsa il JSON contenuto in StoryData
+	var storyData map[string]interface{}
+	
+	if err := json.Unmarshal([]byte(content), &storyData); err != nil {
+		// Se non è JSON valido, ignora silenziosamente
+		return
+	}
+	
+	// Estrai formato (può essere "Harlowe", "harlowe-3", etc.)
+	if format, ok := storyData["format"].(string); ok {
+		story.Format = strings.ToLower(format)
+		
+		// Normalizza il formato per Tweego
+		// "Harlowe" -> "harlowe"
+		// "SugarCube" -> "sugarcube"
+		story.Format = strings.ToLower(story.Format)
+	}
+	
+	// Estrai versione del formato
+	if formatVersion, ok := storyData["format-version"].(string); ok {
+		story.FormatVersion = formatVersion
+	}
+	
+	// Estrai IFID
+	if ifid, ok := storyData["ifid"].(string); ok {
+		story.IFID = ifid
+	}
+	
+	// Estrai titolo (se presente in StoryData)
+	if title, ok := storyData["name"].(string); ok {
+		story.Title = title
+	}
 }

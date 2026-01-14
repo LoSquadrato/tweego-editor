@@ -18,7 +18,7 @@ import (
 )
 
 func main() {
-	fmt.Println("Tweego Editor Backend v0.1.0")
+	fmt.Println("Tweego Editor Backend v0.2.0")
 	fmt.Println("================================\n")
 	
 	// Mostra menu

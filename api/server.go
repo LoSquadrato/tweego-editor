@@ -11,7 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 	"tweego-editor/compiler"
-	"tweego-editor/formats/harlowe"
+	"tweego-editor/formats"
 	"tweego-editor/parser"
 	"tweego-editor/simulator"
 	"tweego-editor/watcher"
@@ -38,14 +38,12 @@ type ServerConfig struct {
 
 // NewServer crea un nuovo server API
 func NewServer(config ServerConfig) *Server {
-	// Imposta modalità Gin
 	if !config.Debug {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
 	router := gin.Default()
 
-	// CORS se abilitato
 	if config.EnableCORS {
 		router.Use(cors.New(cors.Config{
 			AllowOrigins:     []string{"*"},
@@ -62,13 +60,12 @@ func NewServer(config ServerConfig) *Server {
 		wsClients: make(map[*websocket.Conn]bool),
 		wsUpgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool {
-				return true // Allow all origins in development
+				return true
 			},
 		},
 		port: config.Port,
 	}
 
-	// Setup routes
 	server.setupRoutes()
 
 	return server
@@ -78,7 +75,6 @@ func NewServer(config ServerConfig) *Server {
 func (s *Server) setupRoutes() {
 	api := s.router.Group("/api")
 	{
-		// Health check
 		api.GET("/health", s.healthCheck)
 
 		// Story endpoints
@@ -105,7 +101,6 @@ func (s *Server) setupRoutes() {
 		api.GET("/version", s.getVersion)
 	}
 
-	// WebSocket endpoint
 	s.router.GET("/ws", s.handleWebSocket)
 }
 
@@ -143,7 +138,6 @@ func (s *Server) validateStory(c *gin.Context) {
 		return
 	}
 
-	// Valida il file
 	tweeParser := parser.NewTweeParser(req.FilePath)
 	validation := tweeParser.Validate()
 
@@ -171,19 +165,26 @@ func (s *Server) parseStory(c *gin.Context) {
 		return
 	}
 
-	// Processa con Harlowe format
-	harloweFormat := harlowe.NewHarloweFormat()
-	
-	// Arricchisci i passaggi con info extra
+	// Ottieni il formato dal registry
+	storyFormat := formats.GetRegisteredFormat(story.Format)
+	if storyFormat == nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": fmt.Sprintf("Formato '%s' non supportato o non registrato", story.Format),
+			"available_formats": formats.GetAvailableFormats(),
+		})
+		return
+	}
+
+	// Arricchisci i passaggi con info extra usando il formato corretto
 	enrichedPassages := make(map[string]interface{})
 	for title, passage := range story.Passages {
 		enrichedPassages[title] = gin.H{
 			"title":     passage.Title,
 			"tags":      passage.Tags,
 			"content":   passage.Content,
-			"links":     harloweFormat.ParseLinks(passage.Content),
-			"variables": harloweFormat.ParseVariables(passage.Content),
-			"preview":   harloweFormat.StripCode(passage.Content),
+			"links":     storyFormat.ParseLinks(passage.Content),
+			"variables": storyFormat.ParseVariables(passage.Content),
+			"preview":   storyFormat.StripCode(passage.Content),
 		}
 	}
 
@@ -277,7 +278,15 @@ func (s *Server) getPassage(c *gin.Context) {
 		return
 	}
 
-	harloweFormat := harlowe.NewHarloweFormat()
+	// Ottieni il formato dal registry
+	storyFormat := formats.GetRegisteredFormat(story.Format)
+	if storyFormat == nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": fmt.Sprintf("Formato '%s' non supportato o non registrato", story.Format),
+			"available_formats": formats.GetAvailableFormats(),
+		})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
@@ -285,9 +294,9 @@ func (s *Server) getPassage(c *gin.Context) {
 			"title":     passage.Title,
 			"tags":      passage.Tags,
 			"content":   passage.Content,
-			"links":     harloweFormat.ParseLinks(passage.Content),
-			"variables": harloweFormat.ParseVariables(passage.Content),
-			"preview":   harloweFormat.StripCode(passage.Content),
+			"links":     storyFormat.ParseLinks(passage.Content),
+			"variables": storyFormat.ParseVariables(passage.Content),
+			"preview":   storyFormat.StripCode(passage.Content),
 		},
 	})
 }
@@ -316,7 +325,6 @@ func (s *Server) startWatcher(c *gin.Context) {
 		return
 	}
 
-	// Default values
 	if req.Format == "" {
 		req.Format = "harlowe-3"
 	}
@@ -324,7 +332,6 @@ func (s *Server) startWatcher(c *gin.Context) {
 		req.Output = "output.html"
 	}
 
-	// Crea watcher
 	config := watcher.WatcherConfig{
 		Paths:    req.Paths,
 		Compiler: s.compiler,
@@ -348,7 +355,6 @@ func (s *Server) startWatcher(c *gin.Context) {
 
 	s.watcher = fw
 
-	// Invia eventi ai client WebSocket
 	go s.broadcastWatcherEvents()
 
 	c.JSON(http.StatusOK, gin.H{
@@ -447,7 +453,16 @@ func (s *Server) validatePath(c *gin.Context) {
 		return
 	}
 
-	// Crea simulator e valida
+	// Verifica che il formato sia supportato
+	if formats.GetRegisteredFormat(story.Format) == nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": fmt.Sprintf("Formato '%s' non supportato", story.Format),
+			"available_formats": formats.GetAvailableFormats(),
+		})
+		return
+	}
+
+	// Crea simulator (usa automaticamente story.Format)
 	simulator := simulator.NewPathSimulator(story)
 	errors := simulator.ValidatePath(req.Path)
 
@@ -480,7 +495,16 @@ func (s *Server) simulatePath(c *gin.Context) {
 		return
 	}
 
-	// Crea simulator e simula
+	// Verifica che il formato sia supportato
+	if formats.GetRegisteredFormat(story.Format) == nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": fmt.Sprintf("Formato '%s' non supportato", story.Format),
+			"available_formats": formats.GetAvailableFormats(),
+		})
+		return
+	}
+
+	// Crea simulator (usa automaticamente story.Format)
 	sim := simulator.NewPathSimulator(story)
 	result := sim.SimulatePath(req.Path)
 
@@ -502,7 +526,6 @@ func (s *Server) suggestPaths(c *gin.Context) {
 		return
 	}
 
-	// Default max depth
 	if req.MaxDepth == 0 || req.MaxDepth > 10 {
 		req.MaxDepth = 5
 	}
@@ -515,7 +538,16 @@ func (s *Server) suggestPaths(c *gin.Context) {
 		return
 	}
 
-	// Crea simulator e suggerisci
+	// Verifica che il formato sia supportato
+	if formats.GetRegisteredFormat(story.Format) == nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": fmt.Sprintf("Formato '%s' non supportato", story.Format),
+			"available_formats": formats.GetAvailableFormats(),
+		})
+		return
+	}
+
+	// Crea simulator (usa automaticamente story.Format)
 	sim := simulator.NewPathSimulator(story)
 	paths := sim.GetSuggestedPaths(req.StartPassage, req.MaxDepth)
 
@@ -544,7 +576,6 @@ func (s *Server) handleWebSocket(c *gin.Context) {
 	s.wsClients[conn] = true
 	log.Printf("🔌 Client WebSocket connesso (totale: %d)", len(s.wsClients))
 
-	// Mantieni la connessione aperta
 	for {
 		_, _, err := conn.ReadMessage()
 		if err != nil {
@@ -569,7 +600,6 @@ func (s *Server) broadcastWatcherEvents() {
 			"timestamp": event.Timestamp,
 		}
 
-		// Broadcast a tutti i client connessi
 		for client := range s.wsClients {
 			if err := client.WriteJSON(message); err != nil {
 				log.Printf("Errore invio WebSocket: %v", err)

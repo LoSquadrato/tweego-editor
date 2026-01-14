@@ -1,18 +1,11 @@
 package harlowe
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
-
 	"tweego-editor/formats"
 )
-
-// init registra il formato Harlowe all'avvio
-func init() {
-	formats.RegisterFormat("harlowe", func() formats.StoryFormat {
-		return NewHarloweFormat()
-	})
-}
 
 // HarloweFormat implementa StoryFormat per Harlowe
 type HarloweFormat struct{}
@@ -25,6 +18,12 @@ func NewHarloweFormat() *HarloweFormat {
 // GetFormatName restituisce "Harlowe"
 func (h *HarloweFormat) GetFormatName() string {
 	return "Harlowe"
+}
+
+// CreateEvaluator crea un nuovo evaluator per Harlowe
+// Implementa formats.StoryFormat interface
+func (h *HarloweFormat) CreateEvaluator(initialState map[string]interface{}) formats.Evaluator {
+	return NewHarloweEvaluator(initialState)
 }
 
 // ParseLinks estrae i link [[...]] dal contenuto
@@ -70,36 +69,28 @@ func (h *HarloweFormat) ParseVariables(content string) map[string]interface{} {
 
 // parseSetMacro gestisce (set: $var to value, $var2 to value2, ...)
 func (h *HarloweFormat) parseSetMacro(content string, eval *HarloweEvaluator) {
-	// Regex per catturare tutto il contenuto di (set: ...)
-	// Usa una regex più permissiva per catturare nested parentheses
 	setRegex := regexp.MustCompile(`\(set:\s*`)
 	indices := setRegex.FindAllStringIndex(content, -1)
 	
 	for _, idx := range indices {
-		start := idx[1] // Dopo "(set: "
-		
-		// Trova la parentesi chiusa corrispondente
-		end := h.findMatchingParen(content, idx[0]) // idx[0] è la posizione di '('
+		start := idx[1]
+		end := h.findMatchingParen(content, idx[0])
 		if end == -1 {
 			continue
 		}
 		
 		assignmentContent := content[start:end]
-		
-		// Split per virgole (gestendo nested)
 		assignments := smartSplitComma(assignmentContent)
 		
 		for _, assignment := range assignments {
-			// Usa literals.go per parsare l'assignment
 			if err := ParseAssignment(assignment, eval); err != nil {
-				// Log error ma continua
-				_ = err // Ignora errori per ora
+				_ = err
 			}
 		}
 	}
 }
 
-// findMatchingParen trova la parentesi chiusa che corrisponde alla parentesi aperta in position
+// findMatchingParen trova la parentesi chiusa corrispondente
 func (h *HarloweFormat) findMatchingParen(content string, openPos int) int {
 	if openPos >= len(content) || content[openPos] != '(' {
 		return -1
@@ -111,7 +102,6 @@ func (h *HarloweFormat) findMatchingParen(content string, openPos int) int {
 	for i := openPos + 1; i < len(content); i++ {
 		char := content[i]
 		
-		// Gestione stringhe
 		if char == '"' && (i == 0 || content[i-1] != '\\') {
 			inString = !inString
 			continue
@@ -121,7 +111,6 @@ func (h *HarloweFormat) findMatchingParen(content string, openPos int) int {
 			continue
 		}
 		
-		// Conta parentesi
 		if char == '(' {
 			depth++
 		} else if char == ')' {
@@ -132,27 +121,22 @@ func (h *HarloweFormat) findMatchingParen(content string, openPos int) int {
 		}
 	}
 	
-	return -1 // Non trovata
+	return -1
 }
 
 // parsePutMacro gestisce (put: value into $var)
 func (h *HarloweFormat) parsePutMacro(content string, eval *HarloweEvaluator) {
-	// Regex per catturare (put: ... into ...)
 	putRegex := regexp.MustCompile(`\(put:\s*`)
 	indices := putRegex.FindAllStringIndex(content, -1)
 	
 	for _, idx := range indices {
-		start := idx[1] // Dopo "(put: "
-		
-		// Trova la parentesi chiusa
+		start := idx[1]
 		end := h.findMatchingParen(content, start-1)
 		if end == -1 {
 			continue
 		}
 		
 		putContent := content[start:end]
-		
-		// Split per " into "
 		parts := strings.Split(putContent, " into ")
 		if len(parts) != 2 {
 			continue
@@ -161,35 +145,28 @@ func (h *HarloweFormat) parsePutMacro(content string, eval *HarloweEvaluator) {
 		valueExpr := strings.TrimSpace(parts[0])
 		target := strings.TrimSpace(parts[1])
 		
-		// Parse value usando literals.go
 		value, err := ParseValue(valueExpr, eval)
 		if err != nil {
-			value = valueExpr // Fallback
+			value = valueExpr
 		}
 		
-		// Esegui put
 		eval.Put(value, target)
 	}
 }
 
 // parseMoveMacro gestisce (move: $source into $dest)
 func (h *HarloweFormat) parseMoveMacro(content string, eval *HarloweEvaluator) {
-	// Regex per catturare (move: ... into ...)
 	moveRegex := regexp.MustCompile(`\(move:\s*`)
 	indices := moveRegex.FindAllStringIndex(content, -1)
 	
 	for _, idx := range indices {
-		start := idx[1] // Dopo "(move: "
-		
-		// Trova la parentesi chiusa
+		start := idx[1]
 		end := h.findMatchingParen(content, start-1)
 		if end == -1 {
 			continue
 		}
 		
 		moveContent := content[start:end]
-		
-		// Split per " into "
 		parts := strings.Split(moveContent, " into ")
 		if len(parts) != 2 {
 			continue
@@ -198,64 +175,73 @@ func (h *HarloweFormat) parseMoveMacro(content string, eval *HarloweEvaluator) {
 		source := strings.TrimSpace(parts[0])
 		dest := strings.TrimSpace(parts[1])
 		
-		// Esegui move
 		eval.Move(source, dest)
 	}
 }
 
 // StripCode rimuove macro e codice Harlowe
 func (h *HarloweFormat) StripCode(content string) string {
-	// Rimuovi macro (...)
 	macroRegex := regexp.MustCompile(`\([^)]+\)`)
 	cleaned := macroRegex.ReplaceAllString(content, "")
 	
-	// Rimuovi markup HTML
 	htmlRegex := regexp.MustCompile(`<[^>]+>`)
 	cleaned = htmlRegex.ReplaceAllString(cleaned, "")
 	
-	// Pulisci spazi multipli
 	cleaned = strings.Join(strings.Fields(cleaned), " ")
 	
 	return strings.TrimSpace(cleaned)
 }
 
-// === LITERALS - Wrapper per le funzioni in literals.go ===
+// ============================================
+// LITERALS METHODS (per interface StoryFormat)
+// ============================================
 
-// ParseArrayLiteral parsa un singolo array literal (implementa StoryFormat interface)
+// ParseArrayLiteral parsa un singolo array literal
 func (h *HarloweFormat) ParseArrayLiteral(content string) []interface{} {
 	eval := NewHarloweEvaluator(nil)
-	result, _ := ParseArrayLiteral(content, eval)
-	return result
-}
-
-// ParseDatamapLiteral parsa un singolo datamap literal (implementa StoryFormat interface)
-func (h *HarloweFormat) ParseDatamapLiteral(content string) map[string]interface{} {
-	eval := NewHarloweEvaluator(nil)
-	result, _ := ParseDatamapLiteral(content, eval)
-	return result
-}
-
-// ParseDatasetLiteral parsa un singolo dataset literal (implementa StoryFormat interface)
-func (h *HarloweFormat) ParseDatasetLiteral(content string) []interface{} {
-	eval := NewHarloweEvaluator(nil)
-	resultMap, _ := ParseDatasetLiteral(content, eval)
-	// Converti map[string]bool in []interface{}
-	result := make([]interface{}, 0, len(resultMap))
-	for key := range resultMap {
-		result = append(result, key)
+	result, err := ParseArrayLiteral(content, eval)
+	if err != nil {
+		return []interface{}{}
 	}
 	return result
 }
 
+// ParseDatamapLiteral parsa un singolo datamap literal
+func (h *HarloweFormat) ParseDatamapLiteral(content string) map[string]interface{} {
+	eval := NewHarloweEvaluator(nil)
+	result, err := ParseDatamapLiteral(content, eval)
+	if err != nil {
+		return make(map[string]interface{})
+	}
+	return result
+}
+
+// ParseDatasetLiteral parsa un singolo dataset literal
+func (h *HarloweFormat) ParseDatasetLiteral(content string) []interface{} {
+	eval := NewHarloweEvaluator(nil)
+	result, err := ParseDatasetLiteral(content, eval)
+	if err != nil {
+		return []interface{}{}
+	}
+	
+	// Converti map[string]bool in []interface{}
+	arr := make([]interface{}, 0, len(result))
+	for key := range result {
+		arr = append(arr, key)
+	}
+	return arr
+}
+
 // FindAllArrayLiterals trova tutti gli array literals nel contenuto
 func (h *HarloweFormat) FindAllArrayLiterals(content string) [][]interface{} {
-	arrayRegex := regexp.MustCompile(`\(a:\s*[^)]*\)`)
-	matches := arrayRegex.FindAllString(content, -1)
+	regex := regexp.MustCompile(`\(a:|array:\s*[^\)]+\)`)
+	matches := regex.FindAllString(content, -1)
 	
-	results := make([][]interface{}, 0, len(matches))
+	results := [][]interface{}{}
 	for _, match := range matches {
-		if parsed := h.ParseArrayLiteral(match); parsed != nil {
-			results = append(results, parsed)
+		arr := h.ParseArrayLiteral(match)
+		if len(arr) > 0 {
+			results = append(results, arr)
 		}
 	}
 	return results
@@ -263,13 +249,14 @@ func (h *HarloweFormat) FindAllArrayLiterals(content string) [][]interface{} {
 
 // FindAllDatamapLiterals trova tutti i datamap literals nel contenuto
 func (h *HarloweFormat) FindAllDatamapLiterals(content string) []map[string]interface{} {
-	dmRegex := regexp.MustCompile(`\(dm:\s*[^)]*\)`)
-	matches := dmRegex.FindAllString(content, -1)
+	regex := regexp.MustCompile(`\(dm:|datamap:\s*[^\)]+\)`)
+	matches := regex.FindAllString(content, -1)
 	
-	results := make([]map[string]interface{}, 0, len(matches))
+	results := []map[string]interface{}{}
 	for _, match := range matches {
-		if parsed := h.ParseDatamapLiteral(match); parsed != nil {
-			results = append(results, parsed)
+		dm := h.ParseDatamapLiteral(match)
+		if len(dm) > 0 {
+			results = append(results, dm)
 		}
 	}
 	return results
@@ -277,13 +264,14 @@ func (h *HarloweFormat) FindAllDatamapLiterals(content string) []map[string]inte
 
 // FindAllDatasetLiterals trova tutti i dataset literals nel contenuto
 func (h *HarloweFormat) FindAllDatasetLiterals(content string) [][]interface{} {
-	dsRegex := regexp.MustCompile(`\(ds:\s*[^)]*\)`)
-	matches := dsRegex.FindAllString(content, -1)
+	regex := regexp.MustCompile(`\(ds:|dataset:\s*[^\)]+\)`)
+	matches := regex.FindAllString(content, -1)
 	
-	results := make([][]interface{}, 0, len(matches))
+	results := [][]interface{}{}
 	for _, match := range matches {
-		if parsed := h.ParseDatasetLiteral(match); parsed != nil {
-			results = append(results, parsed)
+		ds := h.ParseDatasetLiteral(match)
+		if len(ds) > 0 {
+			results = append(results, ds)
 		}
 	}
 	return results
@@ -296,31 +284,64 @@ func (h *HarloweFormat) ExtractAllLiterals(content string) *formats.LiteralsResu
 		Datamaps: []formats.LiteralInfo{},
 		Datasets: []formats.LiteralInfo{},
 	}
-
-	arrayRegex := regexp.MustCompile(`\(a:\s*[^)]*\)`)
-	datamapRegex := regexp.MustCompile(`\(dm:\s*[^)]*\)`)
-	datasetRegex := regexp.MustCompile(`\(ds:\s*[^)]*\)`)
-
+	
+	eval := NewHarloweEvaluator(nil)
+	
 	// Arrays
-	for _, raw := range arrayRegex.FindAllString(content, -1) {
-		if parsed := h.ParseArrayLiteral(raw); parsed != nil {
-			result.Arrays = append(result.Arrays, formats.LiteralInfo{Raw: raw, Parsed: parsed})
+	arrayRegex := regexp.MustCompile(`\((a|array):[^\)]+\)`)
+	arrayMatches := arrayRegex.FindAllString(content, -1)
+	for _, raw := range arrayMatches {
+		parsed, err := ParseArrayLiteral(raw, eval)
+		if err == nil {
+			result.Arrays = append(result.Arrays, formats.LiteralInfo{
+				Raw:    raw,
+				Parsed: parsed,
+			})
 		}
 	}
-
+	
 	// Datamaps
-	for _, raw := range datamapRegex.FindAllString(content, -1) {
-		if parsed := h.ParseDatamapLiteral(raw); parsed != nil {
-			result.Datamaps = append(result.Datamaps, formats.LiteralInfo{Raw: raw, Parsed: parsed})
+	datamapRegex := regexp.MustCompile(`\((dm|datamap):[^\)]+\)`)
+	datamapMatches := datamapRegex.FindAllString(content, -1)
+	for _, raw := range datamapMatches {
+		parsed, err := ParseDatamapLiteral(raw, eval)
+		if err == nil {
+			result.Datamaps = append(result.Datamaps, formats.LiteralInfo{
+				Raw:    raw,
+				Parsed: parsed,
+			})
 		}
 	}
-
+	
 	// Datasets
-	for _, raw := range datasetRegex.FindAllString(content, -1) {
-		if parsed := h.ParseDatasetLiteral(raw); parsed != nil {
-			result.Datasets = append(result.Datasets, formats.LiteralInfo{Raw: raw, Parsed: parsed})
+	datasetRegex := regexp.MustCompile(`\((ds|dataset):[^\)]+\)`)
+	datasetMatches := datasetRegex.FindAllString(content, -1)
+	for _, raw := range datasetMatches {
+		parsed, err := ParseDatasetLiteral(raw, eval)
+		if err == nil {
+			result.Datasets = append(result.Datasets, formats.LiteralInfo{
+				Raw:    raw,
+				Parsed: parsed,
+			})
 		}
 	}
-
+	
 	return result
+}
+
+// ProcessPassageContent processa il contenuto di un passaggio
+// modificando lo stato dell'evaluator passato
+func (h *HarloweFormat) ProcessPassageContent(content string, eval formats.Evaluator) error {
+	// Cast a HarloweEvaluator per accedere ai metodi specifici
+	harloweEval, ok := eval.(*HarloweEvaluator)
+	if !ok {
+		return fmt.Errorf("evaluator non è di tipo HarloweEvaluator")
+	}
+
+	// Parse le varie macro che modificano lo stato
+	h.parseSetMacro(content, harloweEval)
+	h.parsePutMacro(content, harloweEval)
+	h.parseMoveMacro(content, harloweEval)
+
+	return nil
 }

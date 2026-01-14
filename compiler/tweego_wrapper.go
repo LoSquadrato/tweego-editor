@@ -93,7 +93,7 @@ func (tw *TweegoWrapper) Compile(inputFile string, options *CompileOptions) (*Co
 	}
 	args = append(args, "-o", outputPath)
 
-	// Story format
+	// Story format (SEMPRE richiesto ora)
 	if options.Format != "" {
 		args = append(args, "-f", options.Format)
 	}
@@ -113,51 +113,43 @@ func (tw *TweegoWrapper) Compile(inputFile string, options *CompileOptions) (*Co
 		args = append(args, "--strict")
 	}
 
-	// Watch mode
-	if options.Watch {
-		args = append(args, "-w")
-	}
-
 	// Argomenti aggiuntivi
 	args = append(args, options.AdditionalArgs...)
 
-	// File input (sempre per ultimo)
+	// Input file
 	args = append(args, inputFile)
 
 	// Esegui tweego
 	cmd := exec.Command(tw.tweegoPath, args...)
-	
+
+	// Cattura output e errori
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	// Esegui il comando
 	err := cmd.Run()
 
-	// Cattura output
-	result.Output = stdout.String()
-	stderrStr := stderr.String()
+	// Tweego usa stderr per informazioni, non solo errori
+	output := stderr.String()
+	if output == "" {
+		output = stdout.String()
+	}
 
-	// Processa warnings
-	if stderrStr != "" {
-		lines := strings.Split(stderrStr, "\n")
+	result.Output = output
+
+	// Parse warnings
+	if strings.Contains(output, "warning:") {
+		lines := strings.Split(output, "\n")
 		for _, line := range lines {
-			line = strings.TrimSpace(line)
-			if line != "" {
-				if strings.Contains(strings.ToLower(line), "warning") {
-					result.Warnings = append(result.Warnings, line)
-				} else if strings.Contains(strings.ToLower(line), "error") {
-					result.ErrorMessage += line + "\n"
-				}
+			if strings.Contains(strings.ToLower(line), "warning") {
+				result.Warnings = append(result.Warnings, line)
 			}
 		}
 	}
 
+	// Se c'è un errore E non è solo warnings
 	if err != nil {
-		result.Success = false
-		if result.ErrorMessage == "" {
-			result.ErrorMessage = fmt.Sprintf("Errore esecuzione tweego: %v\n%s", err, stderrStr)
-		}
+		result.ErrorMessage = output
 		return result, fmt.Errorf("compilazione fallita: %w", err)
 	}
 
@@ -167,7 +159,7 @@ func (tw *TweegoWrapper) Compile(inputFile string, options *CompileOptions) (*Co
 	return result, nil
 }
 
-// GetVersion ritorna la versione di Tweego installata
+// GetVersion restituisce la versione di Tweego
 func (tw *TweegoWrapper) GetVersion() (string, error) {
 	cmd := exec.Command(tw.tweegoPath, "--version")
 	output, err := cmd.Output()
@@ -243,29 +235,39 @@ func (tw *TweegoWrapper) validateBeforeCompile(inputFile string, options *Compil
 		return fmt.Errorf("file input vuoto: %s", inputFile)
 	}
 
-	// 3. Verifica che il formato esista (se specificato)
-	if options != nil && options.Format != "" {
-		formats, err := tw.ListFormats()
-		if err != nil {
-			return fmt.Errorf("impossibile verificare formato: %w", err)
-		}
+	// 3. Verifica che il file sia .twee
+	if !strings.HasSuffix(strings.ToLower(inputFile), ".twee") {
+		return fmt.Errorf("il file deve avere estensione .twee")
+	}
 
-		formatExists := false
-		for _, f := range formats {
-			if f == options.Format {
-				formatExists = true
-				break
-			}
-		}
+	// 4. VALIDAZIONE FORMATO - SEMPRE OBBLIGATORIA
+	// Se non è specificato un formato, è un errore
+	if options == nil || options.Format == "" {
+		return fmt.Errorf("formato non specificato. Il formato è obbligatorio per la compilazione")
+	}
 
-		if !formatExists {
-			return fmt.Errorf("formato '%s' non riconosciuto. Formati disponibili: %v", options.Format, formats)
+	// 5. Verifica che il formato specificato sia supportato da Tweego
+	formats, err := tw.ListFormats()
+	if err != nil {
+		return fmt.Errorf("impossibile verificare formati disponibili: %w", err)
+	}
+
+	formatExists := false
+	normalizedFormat := strings.ToLower(options.Format)
+	
+	for _, f := range formats {
+		// Confronta case-insensitive e con prefissi
+		// Es: "harlowe" matcha "harlowe-3", "harlowe-3.2.3"
+		if strings.HasPrefix(strings.ToLower(f), normalizedFormat) || 
+		   strings.EqualFold(f, normalizedFormat) {
+			formatExists = true
+			break
 		}
 	}
 
-	// 4. Verifica che il file sia .twee
-	if !strings.HasSuffix(strings.ToLower(inputFile), ".twee") {
-		return fmt.Errorf("il file deve avere estensione .twee")
+	if !formatExists {
+		return fmt.Errorf("formato '%s' non supportato da Tweego. Formati disponibili: %v", 
+			options.Format, formats)
 	}
 
 	return nil

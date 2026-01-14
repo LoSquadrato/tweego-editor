@@ -2,16 +2,16 @@ package simulator
 
 import (
 	"fmt"
-	"regexp"
-	"strings"
-	"tweego-editor/formats/harlowe"
+	"tweego-editor/formats"
 	"tweego-editor/parser"
 )
 
 // PathSimulator simula un percorso attraverso la storia
 type PathSimulator struct {
-	story  *parser.Story
-	format harlowe.HarloweFormat
+	story           *parser.Story
+	format          formats.StoryFormat
+	visitedPassages map[string]int
+	history         []string
 }
 
 // VariableChange rappresenta il cambiamento di una variabile
@@ -19,7 +19,7 @@ type VariableChange struct {
 	Name     string      `json:"name"`
 	Previous interface{} `json:"previous"`
 	Current  interface{} `json:"current"`
-	Delta    interface{} `json:"delta,omitempty"` // Solo per numeri
+	Delta    interface{} `json:"delta,omitempty"`
 }
 
 // StepResult risultato di un singolo step
@@ -43,37 +43,45 @@ type SimulationResult struct {
 
 // NewPathSimulator crea un nuovo simulatore
 func NewPathSimulator(story *parser.Story) *PathSimulator {
+	formatName := story.Format
+	if formatName == "" {
+		formatName = "harlowe"
+	}
+
+	format := formats.GetRegisteredFormat(formatName)
+	if format == nil {
+		format = formats.GetRegisteredFormat("harlowe")
+	}
+
 	return &PathSimulator{
-		story:  story,
-		format: *harlowe.NewHarloweFormat(),
+		story:           story,
+		format:          format,
+		visitedPassages: make(map[string]int),
+		history:         []string{},
 	}
 }
 
-// ValidatePath verifica che il path sia valido (passaggi collegati)
+// ValidatePath verifica che il path sia valido
 func (ps *PathSimulator) ValidatePath(path []string) []string {
 	errors := []string{}
 
-	// Verifica che tutti i passaggi esistano
 	for i, passageTitle := range path {
 		if _, exists := ps.story.Passages[passageTitle]; !exists {
 			errors = append(errors, fmt.Sprintf("Step %d: passaggio '%s' non esiste", i+1, passageTitle))
 		}
 	}
 
-	// Verifica che i passaggi siano collegati
 	for i := 0; i < len(path)-1; i++ {
 		currentTitle := path[i]
 		nextTitle := path[i+1]
 
 		passage, exists := ps.story.Passages[currentTitle]
 		if !exists {
-			continue // Già segnalato sopra
+			continue
 		}
 
-		// Estrai i link dal passaggio corrente
 		links := ps.format.ParseLinks(passage.Content)
 
-		// Verifica che il prossimo passaggio sia tra i link
 		linked := false
 		for _, link := range links {
 			if link == nextTitle {
@@ -103,13 +111,16 @@ func (ps *PathSimulator) SimulatePath(path []string) *SimulationResult {
 		Errors:     []string{},
 	}
 
-	// Valida il path prima di simulare
 	validationErrors := ps.ValidatePath(path)
 	if len(validationErrors) > 0 {
 		result.Success = false
 		result.Errors = validationErrors
 		return result
 	}
+
+	// Reset history e visited
+	ps.visitedPassages = make(map[string]int)
+	ps.history = []string{}
 
 	// Stato corrente delle variabili
 	currentState := make(map[string]interface{})
@@ -118,9 +129,12 @@ func (ps *PathSimulator) SimulatePath(path []string) *SimulationResult {
 	for i, passageTitle := range path {
 		passage, exists := ps.story.Passages[passageTitle]
 		if !exists {
-			// Non dovrebbe mai succedere dopo la validazione
 			continue
 		}
+
+		// 1. Aggiorna history e visited
+		ps.visitedPassages[passageTitle]++
+		ps.history = append(ps.history, passageTitle)
 
 		stepResult := StepResult{
 			PassageTitle:   passageTitle,
@@ -130,15 +144,28 @@ func (ps *PathSimulator) SimulatePath(path []string) *SimulationResult {
 			AvailableLinks: ps.format.ParseLinks(passage.Content),
 		}
 
-		// Estrai variabili definite in questo passaggio
-		newVars := ps.format.ParseVariables(passage.Content)
+		// 2. Salva stato PRIMA del processing
+		stateBefore := ps.copyState(currentState)
 
-		// Calcola i cambiamenti
-		for varName, newValueRaw := range newVars {
-			previousValue, existed := currentState[varName]
+		// 3. Crea evaluator con lo stato corrente
+		eval := ps.format.CreateEvaluator(currentState)
+		eval.SetVisitedPassages(ps.visitedPassages)
+		eval.SetHistory(ps.history)
+		eval.SetCurrentPassage(passageTitle)
 
-			// Valuta l'espressione nel contesto corrente
-			newValue := ps.evaluateExpression(fmt.Sprintf("%v", newValueRaw), currentState)
+		// 4. CHIAVE: Processa il contenuto usando il formato
+		//    Questo modifica lo stato dell'evaluator
+		if err := ps.format.ProcessPassageContent(passage.Content, eval); err != nil {
+			// Log error ma continua
+			fmt.Printf("⚠️  Warning processing passage %s: %v\n", passageTitle, err)
+		}
+
+		// 5. Ottieni il nuovo stato dall'evaluator
+		newState := eval.GetState()
+
+		// 6. Calcola i cambiamenti
+		for varName, newValue := range newState {
+			previousValue, existed := stateBefore[varName]
 
 			change := VariableChange{
 				Name:     varName,
@@ -146,7 +173,6 @@ func (ps *PathSimulator) SimulatePath(path []string) *SimulationResult {
 				Current:  newValue,
 			}
 
-			// Calcola delta per valori numerici
 			if existed {
 				prevNum, prevIsNum := toNumber(previousValue)
 				currNum, currIsNum := toNumber(newValue)
@@ -155,124 +181,41 @@ func (ps *PathSimulator) SimulatePath(path []string) *SimulationResult {
 					change.Delta = currNum - prevNum
 				}
 			} else {
-				// Variabile nuova
 				change.Previous = nil
 			}
 
 			stepResult.Changes[varName] = change
-			currentState[varName] = newValue
 		}
 
-		// Genera warnings
+		// 7. Aggiorna lo stato corrente
+		currentState = newState
+
+		// 8. Genera warnings
 		stepResult.Warnings = ps.generateWarnings(passage, currentState, stepResult.Changes)
 		result.TotalWarnings += len(stepResult.Warnings)
 
 		result.Steps = append(result.Steps, stepResult)
 	}
 
-	// Stato finale
 	result.FinalState = currentState
 
 	return result
 }
 
-// evaluateExpression valuta un'espressione con variabili
-func (ps *PathSimulator) evaluateExpression(expr string, state map[string]interface{}) interface{} {
-	expr = strings.TrimSpace(expr)
-
-	// Rimuovi quotes per stringhe
-	if (strings.HasPrefix(expr, `"`) && strings.HasSuffix(expr, `"`)) ||
-		(strings.HasPrefix(expr, `'`) && strings.HasSuffix(expr, `'`)) {
-		return strings.Trim(expr, `"'`)
+// copyState crea una copia profonda dello stato
+func (ps *PathSimulator) copyState(state map[string]interface{}) map[string]interface{} {
+	copy := make(map[string]interface{})
+	for k, v := range state {
+		copy[k] = v
 	}
-
-	// Valori booleani
-	if expr == "true" {
-		return true
-	}
-	if expr == "false" {
-		return false
-	}
-
-	// Se non contiene variabili o operatori, prova a parsare come numero
-	if !strings.Contains(expr, "$") && !strings.ContainsAny(expr, "+-*/") {
-		if num, ok := toNumber(expr); ok {
-			return num
-		}
-		return expr // Restituisci come stringa
-	}
-
-	// Sostituisci le variabili con i loro valori
-	evaluated := expr
-	for varName, varValue := range state {
-		placeholder := "$" + varName
-		if strings.Contains(evaluated, placeholder) {
-			// Converti il valore in stringa per la sostituzione
-			valueStr := fmt.Sprintf("%v", varValue)
-			evaluated = strings.ReplaceAll(evaluated, placeholder, valueStr)
-		}
-	}
-
-	// Prova a valutare espressioni matematiche semplici
-	result := evaluateMathExpression(evaluated)
-	if result != nil {
-		return result
-	}
-
-	// Se non riesce a valutare, restituisci l'espressione originale
-	return expr
-}
-
-// evaluateMathExpression valuta espressioni matematiche semplici
-func evaluateMathExpression(expr string) interface{} {
-	expr = strings.TrimSpace(expr)
-
-	// Pattern per operazioni semplici: numero operatore numero
-	patterns := []struct {
-		regex *regexp.Regexp
-		op    string
-	}{
-		{regexp.MustCompile(`^([\d.]+)\s*\+\s*([\d.]+)$`), "+"},
-		{regexp.MustCompile(`^([\d.]+)\s*-\s*([\d.]+)$`), "-"},
-		{regexp.MustCompile(`^([\d.]+)\s*\*\s*([\d.]+)$`), "*"},
-		{regexp.MustCompile(`^([\d.]+)\s*/\s*([\d.]+)$`), "/"},
-	}
-
-	for _, p := range patterns {
-		if matches := p.regex.FindStringSubmatch(expr); len(matches) == 3 {
-			left, _ := toNumber(matches[1])
-			right, _ := toNumber(matches[2])
-
-			switch p.op {
-			case "+":
-				return left + right
-			case "-":
-				return left - right
-			case "*":
-				return left * right
-			case "/":
-				if right != 0 {
-					return left / right
-				}
-			}
-		}
-	}
-
-	// Prova a parsare come singolo numero
-	if num, ok := toNumber(expr); ok {
-		return num
-	}
-
-	return nil
+	return copy
 }
 
 // generateWarnings genera warning per un passaggio
 func (ps *PathSimulator) generateWarnings(passage *parser.Passage, currentState map[string]interface{}, changes map[string]VariableChange) []string {
 	warnings := []string{}
 
-	// Warning per valori critici
 	for varName, change := range changes {
-		// Esempio: vita sotto soglia critica
 		if varName == "vita" || varName == "health" || varName == "hp" {
 			if val, isNum := toNumber(change.Current); isNum {
 				if val <= 0 {
@@ -297,7 +240,6 @@ func toNumber(value interface{}) (float64, bool) {
 	case float64:
 		return v, true
 	case string:
-		// Prova a parsare stringhe numeriche
 		var num float64
 		_, err := fmt.Sscanf(v, "%f", &num)
 		return num, err == nil
@@ -309,10 +251,9 @@ func toNumber(value interface{}) (float64, bool) {
 func (ps *PathSimulator) GetSuggestedPaths(startPassage string, maxDepth int) [][]string {
 	paths := [][]string{}
 
-	// BFS per trovare tutti i percorsi possibili
 	queue := [][]string{{startPassage}}
 
-	for len(queue) > 0 && len(paths) < 10 { // Limit a 10 path per non esplodere
+	for len(queue) > 0 && len(paths) < 10 {
 		currentPath := queue[0]
 		queue = queue[1:]
 
@@ -330,10 +271,8 @@ func (ps *PathSimulator) GetSuggestedPaths(startPassage string, maxDepth int) []
 		links := ps.format.ParseLinks(passage.Content)
 
 		if len(links) == 0 {
-			// Fine del percorso
 			paths = append(paths, currentPath)
 		} else {
-			// Espandi i percorsi
 			for _, link := range links {
 				newPath := make([]string, len(currentPath))
 				copy(newPath, currentPath)

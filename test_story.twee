@@ -12,7 +12,7 @@ La Mia Avventura
 
 
 :: Inizio [inizio importante]
-Ti svegli in una stanza buia. Ti ricordi di esserti addormentato nel tuo bel lettino.
+Ti svegli in una stanza buia. Ti ricordi di esserti addormentato nel tuo candido lettino.
 
 (set: $nome to "Avventuriero")
 (set: $vita to 100)
